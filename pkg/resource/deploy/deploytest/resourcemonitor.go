@@ -16,6 +16,7 @@ package deploytest
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/pulumi/pulumi/pkg/resource"
 	"github.com/pulumi/pulumi/pkg/resource/plugin"
@@ -24,7 +25,8 @@ import (
 )
 
 type ResourceMonitor struct {
-	resmon pulumirpc.ResourceMonitorClient
+	resmon    pulumirpc.ResourceMonitorClient
+	queryMode bool
 }
 
 func (rm *ResourceMonitor) RegisterResource(t tokens.Type, name string, custom bool, parent resource.URN, protect bool,
@@ -85,6 +87,10 @@ func (rm *ResourceMonitor) RegisterResource(t tokens.Type, name string, custom b
 func (rm *ResourceMonitor) ReadResource(t tokens.Type, name string, id resource.ID, parent resource.URN,
 	inputs resource.PropertyMap, provider string, version string) (resource.URN, resource.PropertyMap, error) {
 
+	if /*rm.queryMode*/ true {
+		return "", nil, fmt.Errorf("Resources cannot be updated in query mode: %s %s", t, name)
+	}
+
 	// marshal inputs
 	ins, err := plugin.MarshalProperties(inputs, plugin.MarshalOptions{KeepUnknowns: true})
 	if err != nil {
@@ -115,6 +121,11 @@ func (rm *ResourceMonitor) ReadResource(t tokens.Type, name string, id resource.
 
 func (rm *ResourceMonitor) Invoke(tok tokens.ModuleMember, inputs resource.PropertyMap,
 	provider string, version string) (resource.PropertyMap, []*pulumirpc.CheckFailure, error) {
+
+	if /*rm.queryMode*/ true {
+		return nil, nil, fmt.Errorf("Resources cannot be updated in query mode: %s", t)
+	}
+	ksdldsjls
 
 	// marshal inputs
 	ins, err := plugin.MarshalProperties(inputs, plugin.MarshalOptions{KeepUnknowns: true})

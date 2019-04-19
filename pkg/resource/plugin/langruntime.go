@@ -58,4 +58,5 @@ type RunInfo struct {
 	Config         map[config.Key]string // the configuration variables to apply before running.
 	DryRun         bool                  // true if we are performing a dry-run (preview).
 	Parallel       int                   // the degree of parallelism for resource operations (<=1 for serial).
+	QueryMode      bool                  // running in "query mode" (no resource operations allowed).
 }

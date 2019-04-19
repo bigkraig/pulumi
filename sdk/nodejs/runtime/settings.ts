@@ -38,6 +38,7 @@ export interface Options {
     readonly monitorAddr?: string; // a connection string to the monitor's RPC, in case we need to reestablish.
     readonly dryRun?: boolean; // whether we are performing a preview (true) or a real deployment (false).
     readonly testModeEnabled?: boolean; // true if we're in testing mode (allows execution without the CLI).
+    readonly queryModeEnabled?: boolean; // true if we're in query mode (does not allow resource registration).
 }
 
 /**
@@ -79,6 +80,18 @@ function requireTestModeEnabled(): void {
         throw new Error("Program run without the `pulumi` CLI; this may not be what you want " +
             "(enable PULUMI_TEST_MODE to disable this error)");
     }
+}
+
+/* @internal Used only for testing purposes */
+export function _setQueryMode(val: boolean) {
+    (options as any).queryModeEnabled = val;
+}
+
+ /**
+ * Returns true if query mode is enabled.
+ */
+export function isQueryModeEnabled(): boolean {
+    return options.queryModeEnabled === true;
 }
 
 /**

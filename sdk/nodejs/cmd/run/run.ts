@@ -215,6 +215,28 @@ ${defaultMessage}`);
 
     programStarted();
 
+    const queryMode = true;
+    if (queryMode) {
+        log.debug(`Running program '${program}' in pwd '${process.cwd()}' w/ args: ${programArgs}`);
+        try {
+            return require(program);
+        } catch (e) {
+            // User JavaScript can throw anything, so if it's not an Error it's definitely
+            // not something we want to catch up here.
+            if (!(e instanceof Error)) {
+                throw e;
+            }
+
+            // Give a better error message, if we can.
+            const errorCode = (<any>e).code;
+            if (errorCode === "MODULE_NOT_FOUND") {
+                reportModuleLoadFailure(program, e);
+            }
+
+            throw e;
+        }
+    }
+
     // Construct a `Stack` resource to represent the outputs of the program.
     return runtime.runInPulumiStack(() => {
         // We run the program inside this context so that it adopts all resources.

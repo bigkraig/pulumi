@@ -58,7 +58,7 @@ func (p *languageRuntime) Run(info plugin.RunInfo) (string, bool, error) {
 	// Run the program.
 	done := make(chan error)
 	go func() {
-		done <- p.program(info, &ResourceMonitor{resmon: resmon})
+		done <- p.program(info, &ResourceMonitor{resmon: resmon, queryMode: info.QueryMode})
 	}()
 	if progerr := <-done; progerr != nil {
 		return progerr.Error(), false, nil

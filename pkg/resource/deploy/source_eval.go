@@ -510,6 +510,10 @@ func (rm *resmon) parseProviderRequest(pkg tokens.Package, version string) (prov
 
 // Invoke performs an invocation of a member located in a resource provider.
 func (rm *resmon) Invoke(ctx context.Context, req *pulumirpc.InvokeRequest) (*pulumirpc.InvokeResponse, error) {
+	if /*rm.queryMode*/ true {
+		return nil, fmt.Errorf("Resources cannot be updated in query mode: %v", req)
+	}
+
 	// Fetch the token and load up the resource provider if necessary.
 	tok := tokens.ModuleMember(req.GetTok())
 	providerReq, err := rm.parseProviderRequest(tok.Package(), req.GetVersion())
@@ -552,6 +556,10 @@ func (rm *resmon) Invoke(ctx context.Context, req *pulumirpc.InvokeRequest) (*pu
 // ReadResource reads the current state associated with a resource from its provider plugin.
 func (rm *resmon) ReadResource(ctx context.Context,
 	req *pulumirpc.ReadResourceRequest) (*pulumirpc.ReadResourceResponse, error) {
+	if /*rm.queryMode*/ true {
+		return nil, fmt.Errorf("Resources cannot be updated in query mode: %v", req)
+	}
+
 	// Read the basic inputs necessary to identify the plugin.
 	t, err := tokens.ParseTypeToken(req.GetType())
 	if err != nil {
@@ -633,6 +641,9 @@ func (rm *resmon) ReadResource(ctx context.Context,
 // RegisterResource is invoked by a language process when a new resource has been allocated.
 func (rm *resmon) RegisterResource(ctx context.Context,
 	req *pulumirpc.RegisterResourceRequest) (*pulumirpc.RegisterResourceResponse, error) {
+	if /*rm.queryMode*/ true {
+		return nil, fmt.Errorf("Resources cannot be updated in query mode: %v", req)
+	}
 
 	// Communicate the type, name, and object information to the iterator that is awaiting us.
 
@@ -757,6 +768,10 @@ func (rm *resmon) RegisterResource(ctx context.Context,
 // provisioning.  These will make their way into the eventual checkpoint state file for that resource.
 func (rm *resmon) RegisterResourceOutputs(ctx context.Context,
 	req *pulumirpc.RegisterResourceOutputsRequest) (*pbempty.Empty, error) {
+
+	if /*rm.queryMode*/ true {
+		return nil, fmt.Errorf("Resources cannot be updated in query mode: %v", req)
+	}
 
 	// Obtain and validate the message's inputs (a URN plus the output property map).
 	urn := resource.URN(req.GetUrn())

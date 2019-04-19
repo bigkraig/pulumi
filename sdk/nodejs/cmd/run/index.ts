@@ -139,6 +139,7 @@ function main(args: string[]): void {
     addToEnvIfDefined("PULUMI_NODEJS_PROJECT", argv["project"]);
     addToEnvIfDefined("PULUMI_NODEJS_STACK", argv["stack"]);
     addToEnvIfDefined("PULUMI_NODEJS_DRY_RUN", argv["dry-run"]);
+    addToEnvIfDefined("PULUMI_NODEJS_QUERY_MODE", argv["query-mode"]);
     addToEnvIfDefined("PULUMI_NODEJS_PARALLEL", argv["parallel"]);
     addToEnvIfDefined("PULUMI_NODEJS_MONITOR", argv["monitor"]);
     addToEnvIfDefined("PULUMI_NODEJS_ENGINE", argv["engine"]);
