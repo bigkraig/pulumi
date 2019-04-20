@@ -323,8 +323,9 @@ func (b *localBackend) apply(
 
 	// Print a banner so it's clear this is a local deployment.
 	actionLabel := backend.ActionLabel(kind, opts.DryRun)
-	fmt.Printf(op.Opts.Display.Color.Colorize(
+	_, err := fmt.Fprintf(os.Stderr, op.Opts.Display.Color.Colorize(
 		colors.SpecHeadline+"%s (%s):"+colors.Reset+"\n"), actionLabel, stackRef)
+	contract.IgnoreError(err)
 
 	// Start the update.
 	update, err := b.newUpdate(stackName, op.Proj, op.Root)
@@ -438,10 +439,11 @@ func (b *localBackend) apply(
 
 	// Make sure to print a link to the stack's checkpoint before exiting.
 	if opts.ShowLink {
-		fmt.Printf(
+		_, err := fmt.Fprintf(os.Stderr,
 			op.Opts.Display.Color.Colorize(
 				colors.SpecHeadline+"Permalink: "+
 					colors.Underline+colors.BrightBlue+"file://%s"+colors.Reset+"\n"), stack.(*localStack).Path())
+		contract.IgnoreError(err)
 	}
 
 	return changes, nil
