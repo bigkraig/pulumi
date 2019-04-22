@@ -312,6 +312,15 @@ func (b *localBackend) Destroy(ctx context.Context, stackRef backend.StackRefere
 	return backend.PreviewThenPromptThenExecute(ctx, apitype.DestroyUpdate, stack, op, b.apply)
 }
 
+func (b *localBackend) Query(ctx context.Context, stackRef backend.StackReference,
+	op backend.UpdateOperation) result.Result {
+	stack, err := b.GetStack(ctx, stackRef)
+	if err != nil {
+		return result.FromError(err)
+	}
+	return backend.ExecuteQuery(ctx, apitype.UpdateUpdate, stack, op, b.query)
+}
+
 // apply actually performs the provided type of update on a locally hosted stack.
 func (b *localBackend) apply(
 	ctx context.Context, kind apitype.UpdateKind, stack backend.Stack,
@@ -445,6 +454,14 @@ func (b *localBackend) apply(
 	}
 
 	return changes, nil
+}
+
+// apply actually performs the provided type of update on a locally hosted stack.
+func (b *localBackend) query(
+	ctx context.Context, kind apitype.UpdateKind, stack backend.Stack,
+	op backend.UpdateOperation, opts backend.ApplierOptions,
+	events chan<- engine.Event) result.Result {
+	panic("not implemented")
 }
 
 func (b *localBackend) GetHistory(ctx context.Context, stackRef backend.StackReference) ([]backend.UpdateInfo, error) {

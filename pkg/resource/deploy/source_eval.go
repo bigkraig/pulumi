@@ -510,9 +510,9 @@ func (rm *resmon) parseProviderRequest(pkg tokens.Package, version string) (prov
 
 // Invoke performs an invocation of a member located in a resource provider.
 func (rm *resmon) Invoke(ctx context.Context, req *pulumirpc.InvokeRequest) (*pulumirpc.InvokeResponse, error) {
-	if /*rm.queryMode*/ true {
-		return nil, fmt.Errorf("Resources cannot be updated in query mode: %v", req)
-	}
+	// if /*rm.queryMode*/ true {
+	// 	return nil, fmt.Errorf("Resources cannot be updated in query mode: %v", req)
+	// }
 
 	// Fetch the token and load up the resource provider if necessary.
 	tok := tokens.ModuleMember(req.GetTok())

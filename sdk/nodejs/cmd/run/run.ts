@@ -219,7 +219,7 @@ ${defaultMessage}`);
     if (queryMode) {
         log.debug(`Running program '${program}' in pwd '${process.cwd()}' w/ args: ${programArgs}`);
         try {
-            return require(program);
+            require(program);
         } catch (e) {
             // User JavaScript can throw anything, so if it's not an Error it's definitely
             // not something we want to catch up here.
@@ -235,6 +235,7 @@ ${defaultMessage}`);
 
             throw e;
         }
+        return Promise.resolve();
     }
 
     // Construct a `Stack` resource to represent the outputs of the program.

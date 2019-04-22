@@ -689,6 +689,15 @@ func (b *cloudBackend) Destroy(ctx context.Context, stackRef backend.StackRefere
 	return backend.PreviewThenPromptThenExecute(ctx, apitype.DestroyUpdate, stack, op, b.apply)
 }
 
+func (b *cloudBackend) Query(ctx context.Context, stackRef backend.StackReference,
+	op backend.UpdateOperation) result.Result {
+	stack, err := b.GetStack(ctx, stackRef)
+	if err != nil {
+		return result.FromError(err)
+	}
+	return backend.ExecuteQuery(ctx, apitype.UpdateUpdate, stack, op, b.query)
+}
+
 func (b *cloudBackend) createAndStartUpdate(
 	ctx context.Context, action apitype.UpdateKind, stack backend.Stack,
 	op backend.UpdateOperation, dryRun bool) (client.UpdateIdentifier, int, string, error) {
@@ -776,6 +785,46 @@ func (b *cloudBackend) apply(
 	}
 
 	return b.runEngineAction(ctx, kind, stack.Ref(), op, update, token, events, opts.DryRun)
+}
+
+// apply actually performs the provided type of update on a stack hosted in the Pulumi Cloud.
+func (b *cloudBackend) query(
+	ctx context.Context, kind apitype.UpdateKind, stack backend.Stack,
+	op backend.UpdateOperation, opts backend.ApplierOptions,
+	events chan<- engine.Event) result.Result {
+
+	// // Print a banner so it's clear this is going to the cloud.
+	// actionLabel := backend.ActionLabel(kind, opts.DryRun)
+	// fmt.Printf(op.Opts.Display.Color.Colorize(
+	// 	colors.SpecHeadline+"%s (%s):"+colors.Reset+"\n"), actionLabel, stack.Ref())
+
+	// Create an update object to persist results.
+	update, _ /*version*/, token, err := b.createAndStartUpdate(ctx, kind, stack, op, opts.DryRun)
+	if err != nil {
+		return result.FromError(err)
+	}
+
+	// if opts.ShowLink {
+	// 	// Print a URL at the end of the update pointing to the Pulumi Service.
+	// 	var link string
+	// 	base := b.cloudConsoleStackPath(update.StackIdentifier)
+	// 	if !opts.DryRun {
+	// 		link = b.CloudConsoleURL(base, "updates", strconv.Itoa(version))
+	// 	} else {
+	// 		link = b.CloudConsoleURL(base, "previews", update.UpdateID)
+	// 	}
+	// 	if link != "" {
+	// 		defer func() {
+	// 			fmt.Printf(
+	// 				op.Opts.Display.Color.Colorize(
+	// 					colors.SpecHeadline+"Permalink: "+
+	// 						colors.Underline+colors.BrightBlue+"%s"+colors.Reset+"\n"), link)
+	// 		}()
+	// 	}
+	// }
+
+	_, res := b.runEngineAction(ctx, kind, stack.Ref(), op, update, token, events, opts.DryRun)
+	return res
 }
 
 func (b *cloudBackend) runEngineAction(

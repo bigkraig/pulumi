@@ -46,6 +46,10 @@ type ApplierOptions struct {
 type Applier func(ctx context.Context, kind apitype.UpdateKind, stack Stack, op UpdateOperation,
 	opts ApplierOptions, events chan<- engine.Event) (engine.ResourceChanges, result.Result)
 
+// Querier runs a query program against the target stack.
+type Querier func(ctx context.Context, kind apitype.UpdateKind, stack Stack, op UpdateOperation,
+	opts ApplierOptions, events chan<- engine.Event) result.Result
+
 func ActionLabel(kind apitype.UpdateKind, dryRun bool) string {
 	v := updateTextMap[kind]
 	contract.Assert(v.previewText != "")
@@ -206,6 +210,26 @@ func PreviewThenPromptThenExecute(ctx context.Context, kind apitype.UpdateKind, 
 		ShowLink: true,
 	}
 	return apply(ctx, kind, stack, op, opts, nil /*events*/)
+}
+
+func ExecuteQuery(ctx context.Context, kind apitype.UpdateKind, stack Stack,
+	op UpdateOperation, query Querier) result.Result {
+	// Preview the operation to the user and ask them if they want to proceed.
+
+	// if !op.Opts.SkipPreview {
+	// 	changes, res := PreviewThenPrompt(ctx, kind, stack, op, apply)
+	// 	if res != nil || kind == apitype.PreviewUpdate {
+	// 		return res
+	// 	}
+	// }
+
+	// Perform the change (!DryRun) and show the cloud link to the result.
+	// We don't care about the events it issues, so just pass a nil channel along.
+	opts := ApplierOptions{
+		DryRun:   false,
+		ShowLink: true,
+	}
+	return query(ctx, kind, stack, op, opts, nil /*events*/)
 }
 
 func createDiff(updateKind apitype.UpdateKind, events []engine.Event, displayOpts display.Options) string {
