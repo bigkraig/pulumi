@@ -214,14 +214,6 @@ func PreviewThenPromptThenExecute(ctx context.Context, kind apitype.UpdateKind, 
 
 func ExecuteQuery(ctx context.Context, kind apitype.UpdateKind, stack Stack,
 	op UpdateOperation, query Querier) result.Result {
-	// Preview the operation to the user and ask them if they want to proceed.
-
-	// if !op.Opts.SkipPreview {
-	// 	changes, res := PreviewThenPrompt(ctx, kind, stack, op, apply)
-	// 	if res != nil || kind == apitype.PreviewUpdate {
-	// 		return res
-	// 	}
-	// }
 
 	// Perform the change (!DryRun) and show the cloud link to the result.
 	// We don't care about the events it issues, so just pass a nil channel along.

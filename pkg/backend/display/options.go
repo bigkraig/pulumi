@@ -16,6 +16,14 @@ package display
 
 import "github.com/pulumi/pulumi/pkg/diag/colors"
 
+type DisplayType int
+
+const (
+	DisplayProgress DisplayType = iota
+	DisplayDiff
+	DisplayQuery
+)
+
 // Options controls how the output of events are rendered
 type Options struct {
 	Color                colors.Colorization // colorization to apply to events.
@@ -25,6 +33,6 @@ type Options struct {
 	SuppressOutputs      bool                // true to suppress output summarization, e.g. if contains sensitive info.
 	SummaryDiff          bool                // If the diff display should be summarized
 	IsInteractive        bool                // If we should display things interactively
-	DiffDisplay          bool                // true if we should display things as a rich diff
+	DisplayType          DisplayType         // true if we should display things as a rich diff
 	Debug                bool                // true to enable debug output.
 }

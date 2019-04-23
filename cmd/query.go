@@ -137,7 +137,7 @@ func newQueryCmd() *cobra.Command {
 				ShowSameResources:    showSames,
 				SuppressOutputs:      suppressOutputs,
 				IsInteractive:        interactive,
-				DiffDisplay:          diffDisplay,
+				DisplayType:          display.DisplayQuery,
 				Debug:                debug,
 			}
 

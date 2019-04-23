@@ -43,10 +43,15 @@ func ShowEvents(
 	op string, action apitype.UpdateKind, stack tokens.QName, proj tokens.PackageName,
 	events <-chan engine.Event, done chan<- bool, opts Options, isPreview bool) {
 
-	if opts.DiffDisplay {
+	switch opts.DisplayType {
+	case DisplayDiff:
 		ShowDiffEvents(op, action, events, done, opts)
-	} else {
+	case DisplayProgress:
 		ShowProgressEvents(op, action, stack, proj, events, done, opts, isPreview)
+	case DisplayQuery:
+		ShowQueryEvents(op, action, events, done, opts)
+	default:
+		contract.Failf("Unknown display type %d", opts.DisplayType)
 	}
 }
 
@@ -57,6 +62,57 @@ func (s *nopSpinner) Tick() {
 }
 
 func (s *nopSpinner) Reset() {
+}
+
+// ShowQueryEvents displays the engine events with the diff view.
+func ShowQueryEvents(op string, action apitype.UpdateKind,
+	events <-chan engine.Event, done chan<- bool, opts Options) {
+
+	prefix := fmt.Sprintf("%s%s...", cmdutil.EmojiOr("✨ ", "@ "), op)
+
+	var spinner cmdutil.Spinner
+	var ticker *time.Ticker
+
+	if opts.IsInteractive {
+		spinner, ticker = cmdutil.NewSpinnerAndTicker(prefix, nil, 8 /*timesPerSecond*/)
+	} else {
+		spinner = &nopSpinner{}
+		ticker = time.NewTicker(math.MaxInt64)
+	}
+
+	defer func() {
+		spinner.Reset()
+		ticker.Stop()
+		close(done)
+	}()
+
+	seen := make(map[resource.URN]engine.StepEventMetadata)
+
+	for {
+		select {
+		case <-ticker.C:
+			spinner.Tick()
+		case event := <-events:
+			spinner.Reset()
+
+			out := os.Stdout
+			if event.Type == engine.DiagEvent {
+				payload := event.Payload.(engine.DiagEventPayload)
+				if payload.Severity == diag.Error || payload.Severity == diag.Warning {
+					out = os.Stderr
+				}
+			}
+
+			msg := RenderDiffEvent(action, event, seen, opts)
+			if msg != "" && out != nil {
+				fprintIgnoreError(out, msg)
+			}
+
+			if event.Type == engine.CancelEvent {
+				return
+			}
+		}
+	}
 }
 
 // ShowDiffEvents displays the engine events with the diff view.

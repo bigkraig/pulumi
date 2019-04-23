@@ -793,35 +793,11 @@ func (b *cloudBackend) query(
 	op backend.UpdateOperation, opts backend.ApplierOptions,
 	events chan<- engine.Event) result.Result {
 
-	// // Print a banner so it's clear this is going to the cloud.
-	// actionLabel := backend.ActionLabel(kind, opts.DryRun)
-	// fmt.Printf(op.Opts.Display.Color.Colorize(
-	// 	colors.SpecHeadline+"%s (%s):"+colors.Reset+"\n"), actionLabel, stack.Ref())
-
 	// Create an update object to persist results.
 	update, _ /*version*/, token, err := b.createAndStartUpdate(ctx, kind, stack, op, opts.DryRun)
 	if err != nil {
 		return result.FromError(err)
 	}
-
-	// if opts.ShowLink {
-	// 	// Print a URL at the end of the update pointing to the Pulumi Service.
-	// 	var link string
-	// 	base := b.cloudConsoleStackPath(update.StackIdentifier)
-	// 	if !opts.DryRun {
-	// 		link = b.CloudConsoleURL(base, "updates", strconv.Itoa(version))
-	// 	} else {
-	// 		link = b.CloudConsoleURL(base, "previews", update.UpdateID)
-	// 	}
-	// 	if link != "" {
-	// 		defer func() {
-	// 			fmt.Printf(
-	// 				op.Opts.Display.Color.Colorize(
-	// 					colors.SpecHeadline+"Permalink: "+
-	// 						colors.Underline+colors.BrightBlue+"%s"+colors.Reset+"\n"), link)
-	// 		}()
-	// 	}
-	// }
 
 	return b.runQueryAction(ctx, kind, stack.Ref(), op, update, token, events, opts.DryRun)
 }
@@ -841,8 +817,11 @@ func (b *cloudBackend) runQueryAction(
 	// will signal all events have been proceed when a value is written to the displayDone channel.
 	displayEvents := make(chan engine.Event)
 	displayDone := make(chan bool)
-	go u.RecordAndDisplayEvents(
-		backend.ActionLabel(kind, dryRun), kind, stackRef, op,
+	// go u.RecordAndDisplayEvents(
+	// 	backend.ActionLabel(kind, dryRun), kind, stackRef, op,
+	// 	displayEvents, displayDone, op.Opts.Display, dryRun)
+	go display.ShowEvents(
+		"running query", kind, stackRef.Name(), op.Proj.Name,
 		displayEvents, displayDone, op.Opts.Display, dryRun)
 
 	// The engineEvents channel receives all events from the engine, which we then forward onto other
