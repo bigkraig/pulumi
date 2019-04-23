@@ -813,16 +813,11 @@ func (b *cloudBackend) runQueryAction(
 		return result.FromError(err)
 	}
 
-	// displayEvents renders the event to the console and Pulumi service. The processor for the
+	// Render query output to CLI. The processor for the
 	// will signal all events have been proceed when a value is written to the displayDone channel.
 	displayEvents := make(chan engine.Event)
 	displayDone := make(chan bool)
-	// go u.RecordAndDisplayEvents(
-	// 	backend.ActionLabel(kind, dryRun), kind, stackRef, op,
-	// 	displayEvents, displayDone, op.Opts.Display, dryRun)
-	go display.ShowEvents(
-		"running query", kind, stackRef.Name(), op.Proj.Name,
-		displayEvents, displayDone, op.Opts.Display, dryRun)
+	go display.ShowQueryEvents("running query", displayEvents, displayDone, op.Opts.Display)
 
 	// The engineEvents channel receives all events from the engine, which we then forward onto other
 	// channels for actual processing. (displayEvents and callerEventsOpt.)

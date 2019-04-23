@@ -15,6 +15,7 @@
 package engine
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -110,7 +111,7 @@ func Query(u UpdateInfo, ctx *Context, opts UpdateOptions, dryRun bool) result.R
 	}
 	return query(ctx, info, planOptions{
 		UpdateOptions: opts,
-		SourceFunc:    newUpdateSource,
+		SourceFunc:    newQuerySource,
 		Events:        emitter,
 		Diag:          newEventSink(emitter, false),
 		StatusDiag:    newEventSink(emitter, true),
@@ -169,7 +170,7 @@ func newQuerySource(
 
 	// If that succeeded, create a new source that will perform interpretation of the compiled program.
 	// TODO[pulumi/pulumi#88]: we are passing `nil` as the arguments map; we need to allow a way to pass these.
-	return deploy.NewEvalSource(plugctx, &deploy.EvalRunInfo{
+	return deploy.NewQuerySource(plugctx, &deploy.EvalRunInfo{
 		Proj:    proj,
 		Pwd:     pwd,
 		Program: main,
@@ -238,42 +239,84 @@ func newUpdateSource(
 }
 
 func query(ctx *Context, info *planContext, opts planOptions, dryRun bool) result.Result {
-	planResult, err := plan(ctx, info, opts, dryRun)
+	planRes, err := plan(ctx, info, opts, dryRun)
 	if err != nil {
 		return result.FromError(err)
 	}
 
 	var resourceChanges ResourceChanges
 	var res result.Result
-	if planResult != nil {
-		defer contract.IgnoreClose(planResult)
+	if planRes != nil {
+		defer contract.IgnoreClose(planRes)
 
 		// Make the current working directory the same as the program's, and restore it upon exit.
-		done, chErr := planResult.Chdir()
+		done, chErr := planRes.Chdir()
 		if chErr != nil {
 			return result.FromError(chErr)
 		}
 		defer done()
 
-		if dryRun {
-			// If a dry run, just print the plan, don't actually carry out the deployment.
-			resourceChanges, res = printPlan(ctx, planResult, dryRun)
-		} else {
-			// Otherwise, we will actually deploy the latest bits.
-			opts.Events.preludeEvent(dryRun, planResult.Ctx.Update.GetTarget().Config)
+		runQuery := func(cancelCtx *Context, planResult *planResult, events deploy.Events, preview bool) result.Result {
+			ctx, cancelFunc := context.WithCancel(context.Background())
 
-			// Walk the plan, reporting progress and executing the actual operations as we go.
-			start := time.Now()
-			actions := newUpdateActions(ctx, info.Update, opts)
+			done := make(chan bool)
+			var walkResult result.Result
+			go func() {
+				opts := deploy.Options{
+					Events:            events,
+					Parallel:          planResult.Options.Parallel,
+					Refresh:           planResult.Options.Refresh,
+					RefreshOnly:       planResult.Options.isRefresh,
+					TrustDependencies: planResult.Options.trustDependencies,
+				}
+				walkResult = planResult.Plan.Execute(ctx, opts, preview)
+				close(done)
+			}()
 
-			res = planResult.Walk(ctx, actions, false)
-			resourceChanges = ResourceChanges(actions.Ops)
+			// Asynchronously listen for cancellation, and deliver that signal to plan.
+			go func() {
+				select {
+				case <-cancelCtx.Cancel.Canceled():
+					// Cancel the plan's execution context, so it begins to shut down.
+					cancelFunc()
+				case <-done:
+					return
+				}
+			}()
 
-			if len(resourceChanges) != 0 {
-				// Print out the total number of steps performed (and their kinds), the duration, and any summary info.
-				opts.Events.updateSummaryEvent(actions.MaybeCorrupt, time.Since(start), resourceChanges)
+			select {
+			case <-cancelCtx.Cancel.Terminated():
+				return result.WrapIfNonNil(cancelCtx.Cancel.TerminateErr())
+
+			case <-done:
+				return walkResult
 			}
 		}
+
+		runQueryP := func(ctx *Context, planResult *planResult, dryRun bool) (ResourceChanges, result.Result) {
+			planResult.Options.Events.preludeEvent(dryRun, planResult.Ctx.Update.GetTarget().Config)
+
+			// Walk the plan's steps and and pretty-print them out.
+			actions := newPlanActions(planResult.Options)
+			if res := runQuery(ctx, planResult, actions, true); res != nil {
+				if res.IsBail() {
+					return nil, res
+				}
+
+				return nil, result.Error("an error occurred while advancing the preview")
+			}
+
+			// Emit an event with a summary of operation counts.
+			changes := ResourceChanges(actions.Ops)
+			planResult.Options.Events.previewSummaryEvent(changes)
+			return changes, nil
+		}
+
+		// If a dry run, just print the plan, don't actually carry out the deployment.
+		resourceChanges, res = runQueryP(ctx, planRes, dryRun)
+		contract.Assert(len(resourceChanges) == 0)
+
+		// planResult.Plan.Source().Iterate(ctx).(deploy.QuerySourceIterator).Wait()
 	}
 	return res
 }
