@@ -92,6 +92,91 @@ func Update(u UpdateInfo, ctx *Context, opts UpdateOptions, dryRun bool) (Resour
 	}, dryRun)
 }
 
+func Query(u UpdateInfo, ctx *Context, opts UpdateOptions, dryRun bool) result.Result {
+	contract.Require(u != nil, "update")
+	contract.Require(ctx != nil, "ctx")
+
+	defer func() { ctx.Events <- cancelEvent() }()
+
+	info, err := newPlanContext(u, "update", ctx.ParentSpan)
+	if err != nil {
+		return result.FromError(err)
+	}
+	defer info.Close()
+
+	emitter, err := makeEventEmitter(ctx.Events, u)
+	if err != nil {
+		return result.FromError(err)
+	}
+	return query(ctx, info, planOptions{
+		UpdateOptions: opts,
+		SourceFunc:    newUpdateSource,
+		Events:        emitter,
+		Diag:          newEventSink(emitter, false),
+		StatusDiag:    newEventSink(emitter, true),
+	}, dryRun)
+}
+
+func newQuerySource(
+	client deploy.BackendClient, opts planOptions, proj *workspace.Project, pwd, main string,
+	target *deploy.Target, plugctx *plugin.Context, dryRun bool) (deploy.Source, error) {
+
+	// Before launching the source, ensure that we have all of the plugins that we need in order to proceed.
+	//
+	// There are two places that we need to look for plugins:
+	//   1. The language host, which reports to us the set of plugins that the program that's about to execute
+	//      needs in order to create new resources. This is purely advisory by the language host and not all
+	//      languages implement this (notably Python).
+	//   2. The snapshot. The snapshot contains plugins in two locations: first, in the manifest, all plugins
+	//      that were loaded are recorded. Second, all first class providers record the version of the plugin
+	//      to which they are bound.
+	//
+	// In order to get a complete view of the set of plugins that we need for an update, we must consult both
+	// sources and merge their results into a list of plugins.
+	languagePlugins, err := gatherPluginsFromProgram(plugctx, plugin.ProgInfo{
+		Proj:    proj,
+		Pwd:     pwd,
+		Program: main,
+	})
+	if err != nil {
+		return nil, err
+	}
+	snapshotPlugins, err := gatherPluginsFromSnapshot(plugctx, target)
+	if err != nil {
+		return nil, err
+	}
+	allPlugins := languagePlugins.Union(snapshotPlugins)
+
+	// If there are any plugins that are not available, we can attempt to install them here. This only works when using
+	// the http backend, since the local backend is not capable of installing plugins on its own.
+	//
+	// Note that this is purely a best-effort thing. If we can't install missing plugins, just proceed; we'll fail later
+	// with an error message indicating exactly what plugins are missing.
+	if err := ensurePluginsAreInstalled(client, allPlugins); err != nil {
+		logging.V(7).Infof("newUpdateSource(): failed to install missing plugins: %v", err)
+	}
+
+	// Once we've installed all of the plugins we need, make sure that all analyzers and language plugins are
+	// loaded up and ready to go. Provider plugins are loaded lazily by the provider registry and thus don't
+	// need to be loaded here.
+	const kinds = plugin.AnalyzerPlugins | plugin.LanguagePlugins
+	if err := ensurePluginsAreLoaded(plugctx, allPlugins, kinds); err != nil {
+		return nil, err
+	}
+
+	// Collect the version information for default providers.
+	defaultProviderVersions := computeDefaultProviderPlugins(languagePlugins, allPlugins)
+
+	// If that succeeded, create a new source that will perform interpretation of the compiled program.
+	// TODO[pulumi/pulumi#88]: we are passing `nil` as the arguments map; we need to allow a way to pass these.
+	return deploy.NewEvalSource(plugctx, &deploy.EvalRunInfo{
+		Proj:    proj,
+		Pwd:     pwd,
+		Program: main,
+		Target:  target,
+	}, defaultProviderVersions, dryRun), nil
+}
+
 func newUpdateSource(
 	client deploy.BackendClient, opts planOptions, proj *workspace.Project, pwd, main string,
 	target *deploy.Target, plugctx *plugin.Context, dryRun bool) (deploy.Source, error) {
@@ -150,6 +235,47 @@ func newUpdateSource(
 		Program: main,
 		Target:  target,
 	}, defaultProviderVersions, dryRun), nil
+}
+
+func query(ctx *Context, info *planContext, opts planOptions, dryRun bool) result.Result {
+	planResult, err := plan(ctx, info, opts, dryRun)
+	if err != nil {
+		return result.FromError(err)
+	}
+
+	var resourceChanges ResourceChanges
+	var res result.Result
+	if planResult != nil {
+		defer contract.IgnoreClose(planResult)
+
+		// Make the current working directory the same as the program's, and restore it upon exit.
+		done, chErr := planResult.Chdir()
+		if chErr != nil {
+			return result.FromError(chErr)
+		}
+		defer done()
+
+		if dryRun {
+			// If a dry run, just print the plan, don't actually carry out the deployment.
+			resourceChanges, res = printPlan(ctx, planResult, dryRun)
+		} else {
+			// Otherwise, we will actually deploy the latest bits.
+			opts.Events.preludeEvent(dryRun, planResult.Ctx.Update.GetTarget().Config)
+
+			// Walk the plan, reporting progress and executing the actual operations as we go.
+			start := time.Now()
+			actions := newUpdateActions(ctx, info.Update, opts)
+
+			res = planResult.Walk(ctx, actions, false)
+			resourceChanges = ResourceChanges(actions.Ops)
+
+			if len(resourceChanges) != 0 {
+				// Print out the total number of steps performed (and their kinds), the duration, and any summary info.
+				opts.Events.updateSummaryEvent(actions.MaybeCorrupt, time.Since(start), resourceChanges)
+			}
+		}
+	}
+	return res
 }
 
 func update(ctx *Context, info *planContext, opts planOptions, dryRun bool) (ResourceChanges, result.Result) {

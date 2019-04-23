@@ -823,7 +823,84 @@ func (b *cloudBackend) query(
 	// 	}
 	// }
 
-	_, res := b.runEngineAction(ctx, kind, stack.Ref(), op, update, token, events, opts.DryRun)
+	return b.runQueryAction(ctx, kind, stack.Ref(), op, update, token, events, opts.DryRun)
+}
+
+func (b *cloudBackend) runQueryAction(
+	ctx context.Context, kind apitype.UpdateKind, stackRef backend.StackReference,
+	op backend.UpdateOperation, update client.UpdateIdentifier, token string,
+	callerEventsOpt chan<- engine.Event, dryRun bool) result.Result {
+
+	contract.Assertf(token != "", "persisted actions require a token")
+	u, err := b.newUpdate(ctx, stackRef, op.Proj, op.Root, update, token)
+	if err != nil {
+		return result.FromError(err)
+	}
+
+	// displayEvents renders the event to the console and Pulumi service. The processor for the
+	// will signal all events have been proceed when a value is written to the displayDone channel.
+	displayEvents := make(chan engine.Event)
+	displayDone := make(chan bool)
+	go u.RecordAndDisplayEvents(
+		backend.ActionLabel(kind, dryRun), kind, stackRef, op,
+		displayEvents, displayDone, op.Opts.Display, dryRun)
+
+	// The engineEvents channel receives all events from the engine, which we then forward onto other
+	// channels for actual processing. (displayEvents and callerEventsOpt.)
+	engineEvents := make(chan engine.Event)
+	eventsDone := make(chan bool)
+	go func() {
+		for e := range engineEvents {
+			displayEvents <- e
+			if callerEventsOpt != nil {
+				callerEventsOpt <- e
+			}
+		}
+
+		close(eventsDone)
+	}()
+
+	// The backend.SnapshotManager and backend.SnapshotPersister will keep track of any changes to
+	// the Snapshot (checkpoint file) in the HTTP backend.
+	persister := b.newSnapshotPersister(ctx, u.update, u.tokenSource)
+	snapshotManager := backend.NewSnapshotManager(persister, u.GetTarget().Snapshot)
+
+	// Depending on the action, kick off the relevant engine activity.  Note that we don't immediately check and
+	// return error conditions, because we will do so below after waiting for the display channels to close.
+	cancellationScope := op.Scopes.NewScope(engineEvents, dryRun)
+	engineCtx := &engine.Context{
+		Cancel:          cancellationScope.Context(),
+		Events:          engineEvents,
+		SnapshotManager: snapshotManager,
+		BackendClient:   httpstateBackendClient{backend: b},
+	}
+	if parentSpan := opentracing.SpanFromContext(ctx); parentSpan != nil {
+		engineCtx.ParentSpan = parentSpan.Context()
+	}
+
+	res := engine.Query(u, engineCtx, op.Opts.Engine, true)
+
+	// Wait for dependent channels to finish processing engineEvents before closing.
+	<-displayDone
+	cancellationScope.Close() // Don't take any cancellations anymore, we're shutting down.
+	close(engineEvents)
+	contract.IgnoreClose(snapshotManager)
+
+	// Make sure that the goroutine writing to displayEvents and callerEventsOpt
+	// has exited before proceeding
+	<-eventsDone
+	close(displayEvents)
+
+	// Mark the update as complete.
+	status := apitype.UpdateStatusSucceeded
+	if res != nil {
+		status = apitype.UpdateStatusFailed
+	}
+	completeErr := u.Complete(status)
+	if completeErr != nil {
+		res = result.Merge(res, result.FromError(errors.Wrap(completeErr, "failed to complete update")))
+	}
+
 	return res
 }
 
