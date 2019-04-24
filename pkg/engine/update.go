@@ -269,7 +269,15 @@ func query(ctx *Context, info *planContext, opts planOptions, dryRun bool) resul
 					RefreshOnly:       planResult.Options.isRefresh,
 					TrustDependencies: planResult.Options.trustDependencies,
 				}
-				walkResult = planResult.Plan.Execute(ctx, opts, preview)
+
+				var src deploy.SourceIterator
+				src, walkResult = planResult.Plan.Source().Iterate(ctx, opts, planResult.Plan)
+				if walkResult != nil {
+					return
+				}
+
+				// Block until query completes.
+				src.(deploy.QuerySourceIterator).Wait()
 				close(done)
 			}()
 
@@ -316,7 +324,6 @@ func query(ctx *Context, info *planContext, opts planOptions, dryRun bool) resul
 		resourceChanges, res = runQueryP(ctx, planRes, dryRun)
 		contract.Assert(len(resourceChanges) == 0)
 
-		// planResult.Plan.Source().Iterate(ctx).(deploy.QuerySourceIterator).Wait()
 	}
 	return res
 }
